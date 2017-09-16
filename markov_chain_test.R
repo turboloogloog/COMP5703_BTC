@@ -1,110 +1,115 @@
-#install.packages('quantmod)
-library(quantmod) # Quantitative Financial Modelling Framework定量金融模型框架
-#install.packages('dplyr)
-library(dplyr)# transform and summarize tabular data with rows and columns.  
-              #DATA manipulating through piping
-#install.packages('infotheo)
-library(infotheo)#bin分级 data
-                 #
-#install.packages('caret')
-library(caret)#confusion matrix to validate model
+setwd("C:/Users/vince/Desktop/5703_playground")
+library(dplyr)
+library(infotheo)
 
-# get market data
-getSymbols(c("^GSPC"))
-head(GSPC)
-tail(GSPC)
-plot(GSPC$GSPC.Volume)
+#Read in data, BTC trading data has been resampled by various length of data range.
+BTC <- read.csv("BTC_date.csv", row.names = "Timestamp")
 
-# transfer market data to a simple data frame
-GSPC <- data.frame(GSPC)
+rownames(BTC) <- strptime(x = as.character(rownames(BTC)), format = "%Y-%m-%d")
+head(BTC)
+tail(BTC)
+plot(BTC$Weighted_Price)
 
-# extract the date row name into a date column
-GSPC$Close.Date <- row.names(GSPC)
+BTC <- data.frame(BTC)
+BTC$Close.Date <- row.names(BTC)
 
-# take random sets of sequential rows 
-new_set <- c()
-for (row_set in seq(10000)) {
-  row_quant <- sample(10:30, 1)
+temp_set <- c()
+
+for(row_set in seq(10000)){
+  row_quant <- sample(10:30,1)
   print(row_quant)
-  row_start <- sample(1:(nrow(GSPC) - row_quant), 1)
-  market_subset <- GSPC[row_start:(row_start + row_quant),]
+  row_start <- sample(1:(nrow(BTC) - row_quant), 1)
+  #print(row_start)
+  market_subset <- BTC[row_start:(row_start + row_quant),]
+  #print(market_subset)
   market_subset <- dplyr::mutate(market_subset, 
                                  Close_Date = max(market_subset$Close.Date),
-                                 Close_Gap=(GSPC.Close - lag(GSPC.Close))/lag(GSPC.Close) ,
-                                 High_Gap=(GSPC.High - lag(GSPC.High))/lag(GSPC.High) ,
-                                 Low_Gap=(GSPC.Low - lag(GSPC.Low))/lag(GSPC.Low),
-                                 Volume_Gap=(GSPC.Volume - lag(GSPC.Volume))/lag(GSPC.Volume),
-                                 Daily_Change=(GSPC.Close - GSPC.Open)/GSPC.Open,
-                                 Outcome_Next_Day_Direction= (lead(GSPC.Volume)-GSPC.Volume)) %>%
-    dplyr::select(-GSPC.Open, -GSPC.High, -GSPC.Low, -GSPC.Close, -GSPC.Volume, -GSPC.Adjusted, -Close.Date) %>%
+                                 Close_Gap=(Close - lag(Close))/lag(Close) ,
+                                 High_Gap=(High - lag(High))/lag(High) ,
+                                 Low_Gap=(Low - lag(Low))/lag(Low),
+                                 Volume_Gap=(Volume_BTC - lag(Volume_BTC))/lag(Volume_BTC), # The volume of BTC of last day
+                                 Daily_Change=(Close - Open)/Open,
+                                 Outcome_Next_Day_Direction= (lead(Volume_BTC)-Volume_BTC)) %>% # How much changed in vol next day
+    dplyr::select(-Open, -High, -Low, -Close, -Volume_BTC, -Volume_Currency, -Weighted_Price) %>%
     na.omit
+  #print(market_subset)
   market_subset$Sequence_ID <- row_set
-  new_set <- rbind(new_set, market_subset)
+  temp_set <- rbind(temp_set, market_subset)
 }
 
-dim(new_set)
+dim(temp_set)
 
 # create sequences
 # simplify the data by binning values into three groups
 
-# Close_Gap
-range(new_set$Close_Gap)
-data_dicretized <- discretize(new_set$Close_Gap, disc="equalfreq", nbins=3)
-new_set$Close_Gap <- data_dicretized$X
-new_set$Close_Gap_LMH <- ifelse(new_set$Close_Gap == 1, 'L', 
-                                ifelse(new_set$Close_Gap ==2, 'M','H'))
-
+#Close_Gap
+range(temp_set$Close_Gap)
+data_dicretized <- discretize(temp_set$Close_Gap, disc="equalfreq", nbins=3)
+temp_set$Close_Gap <- data_dicretized$X
+temp_set$Close_Gap_LMH <- ifelse(temp_set$Close_Gap == 1, 'L', ifelse(temp_set$Close_Gap ==2, 'M','H'))
 
 # Volume_Gap
-range(new_set$Volume_Gap)
-data_dicretized <- discretize(new_set$Volume_Gap, disc="equalfreq", nbins=3)
-new_set$Volume_Gap <- data_dicretized$X
-new_set$Volume_Gap_LMH <- ifelse(new_set$Volume_Gap == 1, 'L', 
-                                 ifelse(new_set$Volume_Gap ==2, 'M','H'))
+range(temp_set$Volume_Gap)
+data_dicretized <- discretize(temp_set$Volume_Gap, disc="equalfreq", nbins=3)
+temp_set$Volume_Gap <- data_dicretized$X
+temp_set$Volume_Gap_LMH <- ifelse(temp_set$Volume_Gap == 1, 'L', ifelse(temp_set$Volume_Gap ==2, 'M','H'))
 
 # Daily_Change
-range(new_set$Daily_Change)
-data_dicretized <- discretize(new_set$Daily_Change, disc="equalfreq", nbins=3)
-new_set$Daily_Change <- data_dicretized$X
-new_set$Daily_Change_LMH <- ifelse(new_set$Daily_Change == 1, 'L', 
-                                   ifelse(new_set$Daily_Change ==2, 'M','H'))
+range(temp_set$Daily_Change)
+data_dicretized <- discretize(temp_set$Daily_Change, disc="equalfreq", nbins=3)
+temp_set$Daily_Change <- data_dicretized$X
+temp_set$Daily_Change_LMH <- ifelse(temp_set$Daily_Change == 1, 'L', ifelse(temp_set$Daily_Change ==2, 'M','H'))
 
-# new set
-new_set <- new_set[,c("Sequence_ID", "Close_Date", "Close_Gap_LMH", "Volume_Gap_LMH", "Daily_Change_LMH", "Outcome_Next_Day_Direction")]
+
+#check point
+new_set <- temp_set
+
+# new set, remove cols except for bined cols
+new_set <- new_set[,c("Sequence_ID", "Close_Date", "Close_Gap_LMH", "Volume_Gap_LMH", 
+                      "Daily_Change_LMH", "Outcome_Next_Day_Direction")]
 
 new_set$Event_Pattern <- paste0(new_set$Close_Gap_LMH,      
                                 new_set$Volume_Gap_LMH, 
                                 new_set$Daily_Change_LMH) 
 
+
 # reduce set 
 compressed_set <- dplyr::group_by(new_set, Sequence_ID, Close_Date) %>%
-  dplyr::summarize(Event_Pattern = paste(Event_Pattern, collapse = ",")) %>%
-  data.frame
-compressed_set <- merge(x=compressed_set,y=dplyr::select(new_set, Sequence_ID, Outcome_Next_Day_Direction) %>%
-                          dplyr::group_by(Sequence_ID) %>% 
-                          dplyr::slice(n()) %>%
-                          dplyr::distinct(Sequence_ID), by='Sequence_ID')
-
-# if you have issues with the above dplyr line, try a workaround from reader - Dysregulation, thanks! 
+                  dplyr::summarize(Event_Pattern = paste(Event_Pattern, collapse = ",")) %>%
+                  data.frame
+#compressed_set <- merge(x=compressed_set, y=dplyr::select(new_set, Sequence_ID, Outcome_Next_Day_Direction) %>%
+#                  dplyr::group_by(Sequence_ID) %>% 
+#                  dplyr::slice(n()) %>%
+#                  dplyr::distinct(Sequence_ID), by='Sequence_ID')
 compressed_set <- merge(x=compressed_set,y=new_set[,c(1,6)], by="Sequence_ID")
+
 
 # use last x days of data for validation
 library(dplyr)
-compressed_set_validation <- dplyr::filter(compressed_set, Close_Date >= Sys.Date()-90)
+compressed_set_validation <- dplyr::filter(compressed_set, Close_Date >= "2017-01-01")
 dim(compressed_set_validation)
-compressed_set <- dplyr::filter(compressed_set, Close_Date < Sys.Date()-90)
+compressed_set <- dplyr::filter(compressed_set, Close_Date < "2017-01-01")
 dim(compressed_set)
 
+#drop colse date column
 compressed_set <- dplyr::select(compressed_set, -Close_Date)
 compressed_set_validation <- dplyr::select(compressed_set_validation, -Close_Date)
 
+
 # only keep big moves
 summary(compressed_set$Outcome_Next_Day_Direction)
-compressed_set <- compressed_set[abs(compressed_set$Outcome_Next_Day_Direction) > 5260500,]
+compressed_set <- compressed_set[abs(compressed_set$Outcome_Next_Day_Direction) > 1638.0,]
 compressed_set$Outcome_Next_Day_Direction <- ifelse(compressed_set$Outcome_Next_Day_Direction > 0, 1, 0)
 summary(compressed_set$Outcome_Next_Day_Direction)
 dim(compressed_set)
 compressed_set_validation$Outcome_Next_Day_Direction <- ifelse(compressed_set_validation$Outcome_Next_Day_Direction > 0, 1, 0)
+
+
+
+
+
+
+
 
 # create two data sets - won/not won
 compressed_set_pos <- dplyr::filter(compressed_set, Outcome_Next_Day_Direction==1) %>% dplyr::select(-Outcome_Next_Day_Direction)
@@ -191,5 +196,29 @@ for (event_id in seq(nrow(compressed_set_validation))) {
   
 }
 
+library(caret)#confusion matrix to validate model
 result <- confusionMatrix(ifelse(predicted>0,1,0), actual)
 result 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
